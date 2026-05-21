@@ -1,83 +1,90 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-import sqlite3
+from flask_sqlalchemy import SQLAlchemy
 import os
 
 app = Flask(__name__)
 CORS(app)
 
 # ================= DATABASE =================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_NAME = os.path.join(BASE_DIR, "pos.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# Fix Railway PostgreSQL issue
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")
+
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db = SQLAlchemy(app)
 
 
-def get_db():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
+# ================= MODELS =================
+
+class Customer(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100))
+    phone = db.Column(db.String(20))
 
 
-# ================= CUSTOMERS =================
+class Inventory(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100))
+    price = db.Column(db.Float)
+    stock = db.Column(db.Integer)
+
+
+class Sales(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    product_name = db.Column(db.String(100))
+    quantity = db.Column(db.Integer)
+    total = db.Column(db.Float)
+
+
+# ================= CREATE TABLES =================
+with app.app_context():
+    db.create_all()
+
+
+# ================= ROUTES =================
+
 @app.route("/customers")
 def customers():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-
-        cur.execute("SELECT * FROM customers")
-        rows = cur.fetchall()
-
-        conn.close()
-        return jsonify([dict(row) for row in rows])
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    rows = Customer.query.all()
+    return jsonify([{"id": r.id, "name": r.name, "phone": r.phone} for r in rows])
 
 
-# ================= INVENTORY =================
 @app.route("/inventory")
 def inventory():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-
-        cur.execute("SELECT * FROM inventory")
-        rows = cur.fetchall()
-
-        conn.close()
-        return jsonify([dict(row) for row in rows])
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    rows = Inventory.query.all()
+    return jsonify([{
+        "id": r.id,
+        "name": r.name,
+        "price": r.price,
+        "stock": r.stock
+    } for r in rows])
 
 
-# ================= SALES =================
 @app.route("/sales")
 def sales():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-
-        cur.execute("SELECT * FROM sales")
-        rows = cur.fetchall()
-
-        conn.close()
-        return jsonify([dict(row) for row in rows])
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    rows = Sales.query.all()
+    return jsonify([{
+        "id": r.id,
+        "product_name": r.product_name,
+        "quantity": r.quantity,
+        "total": r.total
+    } for r in rows])
 
 
-# ================= HOME =================
 @app.route("/")
 def home():
     return jsonify({
         "status": "API Running",
-        "message": "POS API working"
+        "message": "POS API with PostgreSQL working"
     })
 
 
-# ================= RUN (RENDER SAFE) =================
+# ================= RUN =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
